@@ -5,6 +5,7 @@
 #include <math.h>
 #include <vector>
 #include <algorithm>
+
 using namespace std;
 struct Record {
     int size;
@@ -21,21 +22,20 @@ public:
     HashIndex() {
         n = 2;
         i = 1;
-        buckets.reserve(n);
+        buckets.resize(n);
     }
     //Add entry to hash table and record file
     //Record file will be formatted:
-    //<hash index>|<key>|<record csv1>|<key>|<record csv2>...\n
+    //<hash index>|<record csv1>|<record csv2>...\n
     void addEntry(string id, string record) {
         std::hash<string> idHash;
-        size_t key = idHash(id) % i;
-
+        size_t keyFull = idHash(id); 
+        size_t key = keyFull & ((1 << i) - 1);
         if(key >= n) {
-            key ^= (1 << i);
+            key ^= (1 << (i - 1));
         }
-        //Character removal from strings is insane in c++ for some reason so I'm just calculating the size of the string without the commas by assuming a constant amount of commas in the record.
-        //what is this garbage -> record.erase(remove(record.begin(), record.end(), ','), record.end())
-        buckets[key].data.push_back({record.length() - 3, key, record});
+
+        buckets[key].data.push_back({record.length() - 3, keyFull, record});
 
         if(percentFilled() > 0.8) {
             
@@ -44,15 +44,14 @@ public:
 
             buckets.resize(n);
 
-            int splitIdx = (n ^ (1 << i)) - 1;
+            int splitIdx = (n - 1) ^ (1 << (i - 1));
             int newIdx = n - 1;
+            vector<Record> splitRecord = buckets[splitIdx].data;
+            buckets[splitIdx].data.clear();
+            for(auto it = splitRecord.begin(); it != splitRecord.end(); ++it) {            
+                size_t key = it->key & ((1 << i) - 1);
+                buckets[key].data.push_back(*it);
 
-            //Some crazy iterator nonsense to swap keys that are in the old bucket to the new one
-            for(auto it = buckets[splitIdx].data.begin(); it != buckets[splitIdx].data.end(); ++it) {
-                if(it->key % i == n){
-                    buckets[newIdx].data.push_back(*it);
-                    buckets[splitIdx].data.erase(it);
-                }
             }
         }
 
@@ -64,10 +63,10 @@ public:
 
     }
     void write(){
-        for(int k = 0; k < buckets.size(); k++){
-            employeesIndex << i;
+        for(int k = 0; k < n; k++){
+            employeesIndex << k;
             for(int j = 0; j < buckets[k].data.size(); j++){
-                employeesIndex << "|" << buckets[k].data[j].key << "|" << buckets[k].data[j].record;
+                employeesIndex << "|" << buckets[k].data[j].record;
             }
             employeesIndex << endl;
         }
@@ -109,9 +108,8 @@ int main(int argc, char* argv[]) {
             string entry;
             HashIndex index;
             while(getline(employees, entry)) {
-                cout << entry << endl;
-                string id = entry.substr(0, entry.find(",") - 1);
-                index.addEntry(id, entry);
+                string id = entry.substr(0, entry.find(","));
+                index.addEntry(id, entry.substr(0, entry.find("\n")));
             }
             index.write();
         }
