@@ -282,7 +282,9 @@ int main(int argc, char* argv[]) {
     else {
         if(strcmp(argv[1], "-C") == 0) {
             ifstream employees {"Employee.csv"};
-
+            std::ofstream ofs;
+            ofs.open("EmployeesIndex", std::ofstream::out | std::ofstream::trunc);
+            ofs.close();
 
             string entry;
             HashIndex index;
