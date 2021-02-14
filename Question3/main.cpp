@@ -292,7 +292,6 @@ int main(int argc, char* argv[]) {
                 string id = entry.substr(0, entry.find(","));
                 index.addEntry(id, entry);
             }
-            cout << "done";
 
         }
         else if(strcmp(argv[1], "-L") == 0 && argc > 2) {
