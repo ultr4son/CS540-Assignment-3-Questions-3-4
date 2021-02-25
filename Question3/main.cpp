@@ -5,60 +5,85 @@
 #include <math.h>
 #include <vector>
 #include <algorithm>
+#include <sstream>
 
 using namespace std;
 struct Record {
-    int size;
+    streampos recordStart;
+    streampos recordEnd;
     size_t key;
-    string record;
 };
+
 struct Block {
-    vector<Record> data;
+    int size = 0;
+    vector<Record> records;
+
+    streampos blockStart = NULL;
+    streampos blockEnd = NULL;
+    streampos overflowStart = NULL;
+    struct Block* overflow = nullptr;
 };
 
 //Hash index abstraction
 class HashIndex {
+
 public:
     HashIndex() {
         n = 2;
         i = 1;
-        buckets.resize(n);
+        blocks.resize(n);
     }
     //Add entry to hash table and record file
     //Record file will be formatted:
     //<hash index>|<record csv1>|<record csv2>...\n
-    void addEntry(string id, string record) {
+    void addEntry(string id, string data) {
+
+        //Produce valid key
         std::hash<string> idHash;
         size_t keyFull = idHash(id); 
         size_t key = keyFull & ((1 << i) - 1);
         if(key >= n) {
             key ^= (1 << (i - 1));
         }
+        Record record{NULL, NULL, keyFull};
+        addRecord(key, &(blocks[key]), data, &record);
+        float filled = percentFilled();
 
-        buckets[key].data.push_back({record.length() - 3, keyFull, record});
 
-        if(percentFilled() > 0.8) {
+        if(filled > 0.8) {
             
             n++;
             i = (int)ceil(log2((double) n));
 
-            buckets.resize(n);
+            blocks.resize(n);
 
             int splitIdx = (n - 1) ^ (1 << (i - 1));
             int newIdx = n - 1;
-            vector<Record> splitRecord = buckets[splitIdx].data;
-            buckets[splitIdx].data.clear();
-            for(auto it = splitRecord.begin(); it != splitRecord.end(); ++it) {            
-                size_t key = it->key & ((1 << i) - 1);
-                buckets[key].data.push_back(*it);
 
-            }
+
+            
+            Block* currentBlock = &blocks[splitIdx];
+            //Recirculate records from split block and overflow blocks back into the new block and split block
+            do {
+                vector<Record> splitRecords = currentBlock->records;
+                vector<string> splitRecordsData;
+                for(Record r : splitRecords) {
+                    splitRecordsData.push_back(readRecord(r));
+                }
+                clearBlock(currentBlock);
+                currentBlock->records.clear();
+
+                for(int ri = 0; ri < splitRecords.size(); ri++) {
+                    size_t key = splitRecords[ri].key & ((1 << i) - 1);
+
+                    //eraseRecord(r);
+                    addRecord(key, &blocks[key], splitRecordsData[ri], &splitRecords[ri]);
+
+                }
+                currentBlock = currentBlock->overflow;
+            }while(currentBlock != nullptr);               
         }
-
-
-
     }
-
     void findEntry(string id) {
         // cout << id << endl;
 
@@ -73,10 +98,8 @@ public:
         // count n from hash index
         int n = 0;
         while(getline(empIndex, line)){
-            n++;
-            // cout << line << endl;
+            n = max(stoi(line.substr(0, line.find("|"))), n);
         }
-        empIndex.close();   
         
         int i = (int)ceil(log2((double) n));
 
@@ -87,83 +110,166 @@ public:
         if(key >= n) {
             key ^= (1 << (i - 1));
         }
-        // cout << key << endl;
 
+        empIndex.close();
         empIndex.open("EmployeesIndex");
-        while(getline(empIndex, line)){
-            // loop until correct bucket is found
-            if(key == 0){
-                //erase bucket number and delimiter (2 char long)
-                line.erase(0, 2);
-                
-                // check the bucket
-                while (!line.empty()) {
-                    // find end of id
-                    auto end = line.find(",");
-                    if (id.compare(line.substr(0, end)) == 0){
-
-                        //report tuple
-                        cout << "id:   " << (line.substr(0, end)) << endl;
-                        line.erase(0, end + 1);
-
-                        end = line.find(",");
-                        cout << "name: " << (line.substr(0, end)) << endl;
-                        line.erase(0, end + 1);
-
-                        end = line.find(",");
-                        cout << "bio:  " << (line.substr(0, end)) << endl;
-                        line.erase(0, end + 1);
-
-                        end = line.find("|");
-                        cout << "manager-id: " << (line.substr(0, end)) << endl;
-                        line.erase(0, end);
-
-                        return;
-                    }
-                    else{
-                        //skip current line
-                        line.erase(0, line.find("|") + 1);
-                    }
-                }
+        while(getline(empIndex, line)) {
+            int k = stoi(line.substr(0, line.find("|")));
+            if(k == key) {
+                break;
             }
-            key--;
         }
+        
+        string record = "";
+        while(record == "") {
+            record = findInBlock(line, id);
+            if(record == "") {
+                if(line.find("`") == string::npos) {
+                    return;
+                }
+                int overflowOffset = stoi(line.substr(line.find("`") + 1));
+                empIndex.seekg(overflowOffset);
+                getline(empIndex, line);                
+            }
+        }
+        cout << record;
 
         empIndex.close();
     }
 
-    void write(){
-        ofstream employeesIndex {"EmployeesIndex"};
-        for(int k = 0; k < n; k++){
-            employeesIndex << k;
-            for(int j = 0; j < buckets[k].data.size(); j++){
-                employeesIndex << "|" << buckets[k].data[j].record;
-            }
-            employeesIndex << endl;
-        }
-    }
+
 private:
+    //4096 bytes plus a maximum of 228 records with 3 commas and 1 "|" separator plus a newline
+    const int BLOCK_SIZE = 4096 + 228 * 4;
+    const int OVERFLOW_OFFSET = BLOCK_SIZE - 30;
     int n;
     int i;
     // ofstream employeesIndex {"EmployeesIndex"};
-    vector<Block> buckets;
-    int bucketSize(Block block){
-        int sum = 0;
-        for(int j = 0; j < block.data.size(); j++) {
-            sum += block.data[j].size;
-        }
-        return sum;
+    vector<Block> blocks;
 
+    string findInBlock(string block, string id) {
+        stringstream b(block);
+        string record;
+        getline(b, record, '|');
+        while(getline(b, record, '|')) {
+            if(record.find('`') != string::npos) {
+                record = record.substr(0, record.find('`'));
+            }
+            if(record.substr(0, record.find(',')) == id) {
+                return record;
+            }
+        }
+        return "";
     }
+
+    int blockSize(Block b) {
+        int size = b.size;
+        while(b.overflow != nullptr) {
+            b = *b.overflow;
+            size += b.size;
+        } 
+        return size;
+    }
+    void clearBlock(Block* block) {
+        fstream file {"EmployeesIndex"};
+        file.seekg(block->blockStart);
+        file << '\0';
+
+        block->size = 0;
+        block->blockEnd = block->blockStart; 
+ 
+    }
+
     float percentFilled() {
         float sum = 0.0;
         for(int j = 0; j < n; j++) {
-            sum += (float)bucketSize(buckets[j]) / 4096.0;
+            
+            sum += (float)blockSize(blocks[j]) / 4096.0;
+            
         }
-        int average = sum / n;
+        float average = sum / n;
         return average;
     }
 
+    string readRecord(Record record) {
+        fstream file {"EmployeesIndex"};
+        file.seekg(record.recordStart);
+        string data;
+        while(file.tellg() != record.recordEnd) {
+            data += (char)file.get();
+        }
+        return data;
+    }
+    
+    void addBlock(Block* block, Block* overflowFrom, size_t key) {
+        fstream file {"EmployeesIndex"};
+         
+        file.seekg(0, file.end);
+
+        if(overflowFrom != nullptr) {
+            overflowFrom->overflow = block;
+            overflowFrom->overflowStart = file.tellg();
+
+            //Write overflow signifier
+            file.seekg(overflowFrom->blockEnd);
+            file << '`' << overflowFrom->overflowStart;
+            file.seekg(0, file.end);
+        }
+
+
+
+        file << key;
+        block->blockStart = file.tellg();
+        block->blockEnd = block->blockStart;
+
+        for(int j = 0; j < BLOCK_SIZE; j++) {
+            //Pad rest of block
+            file.put('\0');
+        }        
+        file << "\n";
+    }
+
+    void addRecord(size_t key, Block* block, string recordData, Record* record) {
+        fstream file {"EmployeesIndex", fstream::in | fstream::out};
+        
+        if(block->blockStart == NULL) {
+            addBlock(block, nullptr, key);
+        }
+
+        while(block->size + recordData.size() - 3 > 4096) {
+            if(block->overflow != nullptr) {
+                block = block->overflow;
+            }
+            else {
+                Block* overflowBlock = new Block;
+                addBlock(overflowBlock, block, key);
+                block = overflowBlock;
+
+            }
+        }
+        //Go to end of block
+        file.seekg(block->blockEnd);
+
+        //Write record data and record its location
+        file << "|";
+        record->recordStart = file.tellg();
+        file << recordData;
+        record->recordEnd = file.tellg();
+        
+        //Update end of block
+        block->records.push_back(*record);
+        block->size += recordData.size() - 3;
+        block->blockEnd = file.tellg();
+
+        //If there is overflow rewrite the pointer
+        if(block->overflowStart != NULL) {
+            file << "`" << block->overflowStart;
+        }
+        
+        //Signify end of block as one after the end of block so the marker is overwritten next time.
+        file << '\0';
+
+    }
 
 };
 void printUsage() {
@@ -176,13 +282,17 @@ int main(int argc, char* argv[]) {
     else {
         if(strcmp(argv[1], "-C") == 0) {
             ifstream employees {"Employee.csv"};
+            std::ofstream ofs;
+            ofs.open("EmployeesIndex", std::ofstream::out | std::ofstream::trunc);
+            ofs.close();
+
             string entry;
             HashIndex index;
             while(getline(employees, entry)) {
                 string id = entry.substr(0, entry.find(","));
-                index.addEntry(id, entry.substr(0, entry.find("\n")));
+                index.addEntry(id, entry);
             }
-            index.write();
+
         }
         else if(strcmp(argv[1], "-L") == 0 && argc > 2) {
             // cout << argv[2] << endl;
