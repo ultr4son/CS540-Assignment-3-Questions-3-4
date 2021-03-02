@@ -205,6 +205,7 @@ int main(int argc, char** argv){
     emp_runs = merge_runs(emp_runs, TEMP_BASE);
 
     // clean files and final output
+    rename(construct_filename(TEMP_BASE, emp_runs - 1).c_str(), SORTED_FILE.c_str());
 
     return 0;
 }
