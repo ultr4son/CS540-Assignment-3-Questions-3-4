@@ -38,11 +38,11 @@ int get_eid(std::string e) {
 }
 
 bool compare_employee(std::string a, std::string b) {
-    
+
 
     int eid_a;
     sscanf(a.c_str(), "%d,", &eid_a);
-    
+
     int eid_b;
     sscanf(b.c_str(), "%d,", &eid_b);
 
@@ -50,7 +50,7 @@ bool compare_employee(std::string a, std::string b) {
 }
 
 bool compare_dept(std::string a, std::string b) {
-    //TFW you want to split a comma separated string in c++    
+    //TFW you want to split a comma separated string in c++
     std::stringstream as(a);
     std::stringstream bs(b);
 
@@ -68,7 +68,7 @@ int compare_dept_employee(std::string dept, std::string emp) {
 
     int eid;
     sscanf(emp.c_str(), "%d,", &eid);
-    
+
     std::stringstream as(dept);
     std::string managerid;
     for(int i = 0; i < 4; i++) {
@@ -85,7 +85,7 @@ int compare_dept_employee(std::string dept, std::string emp) {
 
 /*
  * Convert the record into a number of sorted runs labeled <file_base><n> based on the function compar.
- *  
+ *
  */
 int to_runs(std::string record_file_name, bool (*compar)(std::string, std::string), std::string file_base) {
     int runs_written;
@@ -98,9 +98,9 @@ int to_runs(std::string record_file_name, bool (*compar)(std::string, std::strin
 
         std::vector<std::string> records;
         std::string line;
-        while(getline(record_file, line) && num_read < MAX_BLOCKS){
+        while(num_read < MAX_BLOCKS && getline(record_file, line) ){
             records.push_back(line);
-            num_read++;                        
+            num_read++;
 
         }
 
@@ -110,7 +110,7 @@ int to_runs(std::string record_file_name, bool (*compar)(std::string, std::strin
         std::ofstream run_file(run_file_name, std::ofstream::out | std::ofstream::trunc);
         for(int w = 0; w < num_read; w++) {
             run_file << records[w] << "\n";
-        }   
+        }
 
     }
     return runs_written;
@@ -138,7 +138,7 @@ std::string peek_line(std::ifstream& file) {
         int pos = file.tellg();
 
         getline(file, tuple);
-        
+
         file.seekg(pos);
         return tuple;
 }
@@ -146,7 +146,7 @@ std::string peek_line(std::ifstream& file) {
 void advance(ReadBuffer& r) {
     std::string temp;
     getline(*r.file, temp);
-    
+
     r.line = peek_line(*r.file);
 }
 
@@ -170,12 +170,12 @@ std::vector<int> readBuffer_as_keys(std::vector<ReadBuffer> rb, int (as_int)(std
 
 /*
  *
- * Join a_runs and b_runs from a and b, sequentially. 
- * 
+ * Join a_runs and b_runs from a and b, sequentially.
+ *
  */
 void join_runs(std::string a_base, std::string b_base, int a_runs, int b_runs, int(a_as_int)(std::string), int (b_as_int)(std::string), bool b_not_unqique) {
     std::ofstream join_file(JOIN_FILE, std::ofstream::out | std::ofstream::trunc);
-    
+
     std::vector<std::ifstream*> a_files;
     std::vector<std::ifstream*> b_files;
 
@@ -229,7 +229,7 @@ void join_runs(std::string a_base, std::string b_base, int a_runs, int b_runs, i
 
     }
 
-    
+
 }
 
 
