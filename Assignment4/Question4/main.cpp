@@ -147,22 +147,31 @@ int merge_runs(int runs, std::string base){
     // and end of our temp files to populate the buffer
     int beg = 0;
     int end = runs;
+    int level_i = 1;
 
     std::vector<ReadBuffer> merge_files;
     populate_buffer(merge_files, base, beg, end);
 
     while(merge_files.size() > 1){
+
         // update end points if done with level-i pass mergeing
         if(beg == end){
             beg = end;
             end = runs;
+            if(beg == end){
+                break;
+            }
+            std::cout << "# of level-" << level_i << " runs: " << end - beg << std::endl;
+            level_i++;
         }
 
         // the size of offset is how many files are included in the buffer
-        int offset = std::min(MAX_BLOCKS - 1, end-beg);
+        int offset = std::min(MAX_BLOCKS - 1, end - beg);
+        // std::cout << offset << std::endl;
+
         populate_buffer(merge_files, base, beg, beg + offset);
         // print_buffer(merge_files);
-        std::cout << "beg: " << beg << " end: " << beg + offset << std::endl;
+        // std::cout << "beg: " << beg << " end: " << beg + offset << std::endl;
         beg += offset;
 
         // std::cout << merge_files.size() << std::endl;
@@ -179,15 +188,20 @@ int merge_runs(int runs, std::string base){
         
         run_file.close();
         runs++;
+
     }
+    // runs--;
     // std::cout << "total runs: " << runs << std::endl;
     return runs;
 }
 
 void clean_temp_csv(){
+    std::cout << "Cleaning previous temp records" << std::endl;
     char cmd[20];
     strcpy(cmd, "rm temp*.csv");
-    system(cmd);
+    std:: system(cmd);
+    // strcpy(cmd, "rm EmpSorted.csv");
+    // system(cmd);
 }
 
 // General multi-way merge sort
@@ -197,15 +211,20 @@ int main(int argc, char** argv){
     clean_temp_csv();
 
     // Pass 0
+    std::cout << "M = " << MAX_BLOCKS << std::endl;
+    std::cout << std::endl << "Breaking up " << EMP_FILE << " into runs" << std::endl;
     int emp_runs = to_runs(EMP_FILE, compare_eid, TEMP_BASE);
     // int emp_runs = to_runs("EmpSmall.csv", compare_eid, EMP_BASE);
-    std::cout << "num of level-0 runs: " << emp_runs << std::endl;
+    std::cout <<  "# of level-0 runs: " << emp_runs << std::endl;
 
     // Pass i
+    std::cout << "Merge step" << std::endl;
     emp_runs = merge_runs(emp_runs, TEMP_BASE);
 
     // clean files and final output
     rename(construct_filename(TEMP_BASE, emp_runs - 1).c_str(), SORTED_FILE.c_str());
-
+    // std::cout << std::endl << "total number of runs (files) generated: " << emp_runs << std::endl;
+    std::cout << "final merge file stored at: " << SORTED_FILE << std::endl;
+    
     return 0;
 }
